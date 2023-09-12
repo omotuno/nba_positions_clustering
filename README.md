@@ -14,7 +14,7 @@ The resulting 3 player clusters are characterized as:
 Visualizations and statistical comparisons are used to profile each cluster. The analysis shows traditional position labels like "point guard" no longer adequately describe a player's role and style. The clusters provide an improved categorization of playing style in the modern NBA.
 
 ##  Code
-The R code to perform the clustering analysis and generate visualizations is in Olusegun NBA Positions.html. It does the following:
+The R code to perform the clustering analysis and generate visualizations is in Olusegun NBA Positions.rmd (a rstudio markdown file). It does the following:
 
 -- Loads and prepares the dataset
 
