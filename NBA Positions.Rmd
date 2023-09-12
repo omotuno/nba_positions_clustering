@@ -1,0 +1,5261 @@
+---
+title: "NBA Positions"
+author: "Olusegun"
+date: "2021-04-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list=ls())
+
+### Initialize data sets to work with
+# Webscrape Statistics from Baskballreference
+#library(rvest)
+#thelink <- xml2::read_html("https://www.basketball-reference.com/leagues/NBA_2021_per_game.html")
+#nba <- as.data.frame(thelink %>%html_nodes("table")%>%.[[1]] %>%html_table())
+
+# Remove repeated header row
+#unn <- subset(nba, nba$Rk != 'Rk')
+
+# Remove duplicated player records (duplicated if player traded, keep only 'Total' record)
+#nba2 <- unn[!duplicated(unn$Player),]
+
+# Convert regressor variables to integer values
+#i <- c(6:30)
+#nba2[ , i] <- apply(nba2[ , i], 2, function(x) as.numeric(as.character(x)))
+
+# Filter out players not having played >= [pct] of total games played
+#pct <- .7 #define percentage of games player must have played in as compared to max player
+#nba3 <- subset(nba2,nba2$G >= max(nba2$G)*pct)
+
+# Remove attempts and attempts made columns (as they are simple divisors and dividends of percentage columns)
+#nba4 <- nba3[-c(1,2,4:8,9,10,12,13,15,16,19,20)]
+#summary(nba4)
+
+################### CSV SAVED ON APRIL 8th 2021 ####################
+#write.csv(nba3, "nba3.csv")
+
+nba3 <- read.csv('/Users/shegeb/Documents/BGSU/Spring 2021/data_mining/6440 project/Dataset/nba3.csv')
+colnames(nba3)[11] <- 'FG%'
+colnames(nba3)[12] <- '3P'
+colnames(nba3)[13] <- '3PA'
+colnames(nba3)[14] <- '3P%'
+colnames(nba3)[15] <- '2P'
+colnames(nba3)[16] <- '2PA'
+colnames(nba3)[17] <- '2P%'
+colnames(nba3)[18] <- 'eF%'
+colnames(nba3)[21] <- 'FT%'
+
+nba4 <- nba3[-c(1,2,4:8,9,10,12,13,15,16,19,20)]
+summary(nba4)
+```
+
+```{r}
+#nba4 <- na.omit(nba3) #remove records with 'na's
+nba3$`3P%`[is.na(nba3$`3P%`)]<-0 
+nba4$`3P%`[is.na(nba4$`3P%`)]<-0 
+
+# Construct position specific dataframes and assign values to specific positions
+table(nba4$Pos)
+```
+
+```{r}
+nba3[nba3$Pos =='C-PF',] # Kelly Olynyk
+```
+
+```{r}
+nba3[nba3$Pos =='PG-SG',] # James Harden
+```
+
+```{r}
+nba3[nba3$Pos =='SF-SG',] # Sviatoslav Mykhailiuk
+```
+
+```{r}
+nba3[nba3$Pos =='SG-PG',] # Delon Wright
+```
+
+```{r}
+nba3[nba3$Pos =='SG-SF',] # Hamidou Diallo & Norman Powell
+```
+
+```{r}
+################# KNN TO DEFINE PLAYERS ################# 
+#### Olynyk: C OR PF?? ####
+source("/Users/shegeb/Documents/BGSU/Spring 2021/data_mining/R_codes/myfunctions.R")
+
+knn <- subset(nba4,nba4$Pos =='C' | nba4$Pos =='PF')
+
+knn$Pos <- as.factor(knn$Pos)
+
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0)
+### create 70:30 partition
+p2 <- partition.2(knn, 0.7)
+training.data <- p2$data.train
+test.data <- p2$data.test
+
+### Rescale the data
+training.scaled <- scale(training.data[,-1], center = TRUE, scale = TRUE)
+training.scaled.wY <- cbind(training.scaled, training.data[,1])
+training.scaled.attr <- attributes(training.scaled)
+
+test.scaled <- scale(test.data[,-1], 
+                     center = training.scaled.attr$`scaled:center`, 
+                     scale = training.scaled.attr$`scaled:scale`)
+
+### fit k-nn model for k = 1, ..., 60
+library(FNN)
+library(caret)
+```
+
+```{r}
+K <- 60
+kappa <- rep(0, K)
+for (kk in 1:K){
+  Knn <- knn(train = training.scaled, test = test.scaled,
+             cl = training.data[,1], k = kk)
+  c <- confusionMatrix(as.factor(Knn), as.factor(test.data[,1]), 
+                       positive = "C")
+  kappa[kk] <- c$overall["Kappa"]
+  cat("K", kk, "Kappa", kappa[kk], "\n")
+}
+```
+
+```{r}
+# create a plot for k vs. kappa
+plot(c(1:K), kappa, xlab = "k", ylab = "Kappa", type = "l", col = "#FC4E07")
+```
+
+```{r}
+max.k <- which.max(kappa)
+max.k #1 is too low, use 13, next highest, instead
+```
+
+```{r}
+max.k <- 13
+
+### Fit kNN model on a single new observation with k=[max.k] 
+x <- nba4[(nba4$Pos=="C-PF"),]
+x0 <- x[-1]
+
+x0.scaled <- scale(x0, center = training.scaled.attr$`scaled:center`, scale = training.scaled.attr$`scaled:scale`) 
+
+Knn <- knn(train = training.scaled, test = x0.scaled,
+           cl = training.data[,1], k = max.k)
+Knn
+```
+
+```{r}
+## labels of nearest neighbors
+Knn.attr <- attributes(Knn)
+training.data[Knn.attr$nn.index,1]
+```
+
+```{r}
+summary(training.data[Knn.attr$nn.index,1]) #Label as PF
+```
+
+```{r}
+#### HARDIN: PG OR SG?? ####
+knn <- subset(nba4,nba4$Pos =='PG' | nba4$Pos =='SG')
+
+knn$Pos <- as.factor(knn$Pos)
+
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0)
+### create 70:30 partition
+p2 <- partition.2(knn, 0.7)
+training.data <- p2$data.train
+test.data <- p2$data.test
+
+### Rescale the data
+training.scaled <- scale(training.data[,-1], center = TRUE, scale = TRUE)
+training.scaled.wY <- cbind(training.scaled, training.data[,1])
+training.scaled.attr <- attributes(training.scaled)
+
+test.scaled <- scale(test.data[,-1], 
+                     center = training.scaled.attr$`scaled:center`, 
+                     scale = training.scaled.attr$`scaled:scale`)
+
+### fit k-nn model for k = 1, ..., 60
+K <- 60
+kappa <- rep(0, K)
+for (kk in 1:K){
+  Knn <- knn(train = training.scaled, test = test.scaled,
+             cl = training.data[,1], k = kk)
+  c <- confusionMatrix(as.factor(Knn), as.factor(test.data[,1]), 
+                       positive = "PG")
+  kappa[kk] <- c$overall["Kappa"]
+  cat("K", kk, "Kappa", kappa[kk], "\n")
+}
+```
+
+```{r}
+# create a plot for k vs. kappa
+plot(c(1:K), kappa, xlab = "k", ylab = "Kappa", type = "l", col = "#FC4E07")
+```
+
+```{r}
+max.k <- which.max(kappa)
+max.k
+```
+
+```{r}
+### Fit kNN model on a single new observation with k=[max.k] 
+x <- nba4[(nba4$Pos=="PG-SG"),]
+x0 <- x[-1]
+
+x0.scaled <- scale(x0, center = training.scaled.attr$`scaled:center`, scale = training.scaled.attr$`scaled:scale`) 
+
+Knn <- knn(train = training.scaled, test = x0.scaled,
+           cl = training.data[,1], k = max.k)
+Knn
+```
+
+```{r}
+## labels of nearest neighbors
+Knn.attr <- attributes(Knn)
+training.data[Knn.attr$nn.index,1]
+```
+
+```{r}
+summary(training.data[Knn.attr$nn.index,1]) #label as PG
+
+```
+
+```{r}
+#### Mykhailiuk : SF OR SG?? ####
+knn <- subset(nba4,nba4$Pos =='SF' | nba4$Pos =='SG')
+
+knn$Pos <- as.factor(knn$Pos)
+
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0)
+### create 70:30 partition
+p2 <- partition.2(knn, 0.7)
+training.data <- p2$data.train
+test.data <- p2$data.test
+
+### Rescale the data
+training.scaled <- scale(training.data[,-1], center = TRUE, scale = TRUE)
+training.scaled.wY <- cbind(training.scaled, training.data[,1])
+training.scaled.attr <- attributes(training.scaled)
+
+test.scaled <- scale(test.data[,-1], 
+                     center = training.scaled.attr$`scaled:center`, 
+                     scale = training.scaled.attr$`scaled:scale`)
+
+### fit k-nn model for k = 1, ..., 60
+K <- 60
+kappa <- rep(0, K)
+for (kk in 1:K){
+  Knn <- knn(train = training.scaled, test = test.scaled,
+             cl = training.data[,1], k = kk)
+  c <- confusionMatrix(as.factor(Knn), as.factor(test.data[,1]), 
+                       positive = "SF")
+  kappa[kk] <- c$overall["Kappa"]
+  cat("K", kk, "Kappa", kappa[kk], "\n")
+}
+```
+
+```{r}
+# create a plot for k vs. kappa
+plot(c(1:K), kappa, xlab = "k", ylab = "Kappa", type = "l", col = "#FC4E07")
+```
+
+```{r}
+max.k <- which.max(kappa)
+max.k
+```
+
+```{r}
+### Fit kNN model on a single new observation with k=[max.k] 
+x <- nba4[(nba4$Pos=="SF-SG"),]
+x0 <- x[-1]
+
+x0.scaled <- scale(x0, center = training.scaled.attr$`scaled:center`, scale = training.scaled.attr$`scaled:scale`) 
+
+Knn <- knn(train = training.scaled, test = x0.scaled,
+           cl = training.data[,1], k = max.k)
+Knn
+```
+
+```{r}
+## labels of nearest neighbors
+Knn.attr <- attributes(Knn)
+training.data[Knn.attr$nn.index,1]
+```
+
+```{r}
+summary(training.data[Knn.attr$nn.index,1]) #label as SG
+```
+
+```{r}
+#### Wright: SG OR PG?? ####
+knn <- subset(nba4,nba4$Pos =='SG' | nba4$Pos =='PG')
+
+knn$Pos <- as.factor(knn$Pos)
+
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0)
+### create 70:30 partition
+p2 <- partition.2(knn, 0.7)
+training.data <- p2$data.train
+test.data <- p2$data.test
+
+### Rescale the data
+training.scaled <- scale(training.data[,-1], center = TRUE, scale = TRUE)
+training.scaled.wY <- cbind(training.scaled, training.data[,1])
+training.scaled.attr <- attributes(training.scaled)
+
+test.scaled <- scale(test.data[,-1], 
+                     center = training.scaled.attr$`scaled:center`, 
+                     scale = training.scaled.attr$`scaled:scale`)
+
+### fit k-nn model for k = 1, ..., 60
+K <- 60
+kappa <- rep(0, K)
+for (kk in 1:K){
+  Knn <- knn(train = training.scaled, test = test.scaled,
+             cl = training.data[,1], k = kk)
+  c <- confusionMatrix(as.factor(Knn), as.factor(test.data[,1]), 
+                       positive = "SG")
+  kappa[kk] <- c$overall["Kappa"]
+  cat("K", kk, "Kappa", kappa[kk], "\n")
+}
+```
+
+```{r}
+# create a plot for k vs. kappa
+plot(c(1:K), kappa, xlab = "k", ylab = "Kappa", type = "l", col = "#FC4E07")
+```
+
+```{r}
+max.k <- which.max(kappa)
+max.k
+```
+
+```{r}
+### Fit kNN model on a single new observation with k=[max.k] 
+x <- nba4[(nba4$Pos=="SG-PG"),]
+x0 <- x[-1]
+
+x0.scaled <- scale(x0, center = training.scaled.attr$`scaled:center`, scale = training.scaled.attr$`scaled:scale`) 
+
+Knn <- knn(train = training.scaled, test = x0.scaled,
+           cl = training.data[,1], k = max.k)
+Knn
+```
+
+```{r}
+## labels of nearest neighbors
+Knn.attr <- attributes(Knn)
+training.data[Knn.attr$nn.index,1]
+```
+
+```{r}
+summary(training.data[Knn.attr$nn.index,1]) #label as SG
+```
+
+```{r}
+#### Diallo & Powell: SG OR SF?? ####
+knn <- subset(nba4,nba4$Pos =='SG' | nba4$Pos =='SF')
+
+knn$Pos <- as.factor(knn$Pos)
+
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0)
+### create 70:30 partition
+p2 <- partition.2(knn, 0.7)
+training.data <- p2$data.train
+test.data <- p2$data.test
+
+### Rescale the data
+training.scaled <- scale(training.data[,-1], center = TRUE, scale = TRUE)
+training.scaled.wY <- cbind(training.scaled, training.data[,1])
+training.scaled.attr <- attributes(training.scaled)
+
+test.scaled <- scale(test.data[,-1], 
+                     center = training.scaled.attr$`scaled:center`, 
+                     scale = training.scaled.attr$`scaled:scale`)
+
+### fit k-nn model for k = 1, ..., 60
+K <- 60
+kappa <- rep(0, K)
+for (kk in 1:K){
+  Knn <- knn(train = training.scaled, test = test.scaled,
+             cl = training.data[,1], k = kk)
+  c <- confusionMatrix(as.factor(Knn), as.factor(test.data[,1]), 
+                       positive = "SG")
+  kappa[kk] <- c$overall["Kappa"]
+  cat("K", kk, "Kappa", kappa[kk], "\n")
+}
+```
+
+```{r}
+# create a plot for k vs. kappa
+plot(c(1:K), kappa, xlab = "k", ylab = "Kappa", type = "l", col = "#FC4E07")
+```
+
+```{r}
+max.k <- which.max(kappa)
+max.k
+```
+
+```{r}
+### Fit kNN model on a single new observation with k=[max.k] 
+x <- nba4[(nba4$Pos=="SG-SF"),]
+x0 <- x[1,][-1] #Diallo
+x1 <- x[2,][-1] #Powell
+
+x0.scaled <- scale(x0, center = training.scaled.attr$`scaled:center`, scale = training.scaled.attr$`scaled:scale`) 
+x1.scaled <- scale(x1, center = training.scaled.attr$`scaled:center`, scale = training.scaled.attr$`scaled:scale`) 
+
+Knn0 <- knn(train = training.scaled, test = x0.scaled,
+            cl = training.data[,1], k = max.k)
+Knn0
+```
+
+```{r}
+Knn1 <- knn(train = training.scaled, test = x1.scaled,
+            cl = training.data[,1], k = max.k)
+Knn1
+```
+
+```{r}
+## labels of nearest neighbors
+Knn.attr <- attributes(Knn0)
+training.data[Knn.attr$nn.index,1]
+```
+
+```{r}
+summary(training.data[Knn.attr$nn.index,1]) 
+```
+
+```{r}
+table(knn$Pos) #label Diallo as SG MAJORITY RULE
+```
+
+```{r}
+Knn.attr <- attributes(Knn1)
+training.data[Knn.attr$nn.index,1]
+```
+
+```{r}
+summary(training.data[Knn.attr$nn.index,1]) #label Powell as SG
+```
+
+```{r}
+#################### POP OUT OF KNN CLASSIFICIATION ###################
+#define Olynyk as KNN result, viz. "PF"
+nba4$Pos[nba4$Pos=="C-PF"] <- "PF"
+nba3$Pos[nba3$Pos=="C-PF"] <- "PF"
+
+#define Hardin as KNN result, viz. "PG"
+nba4$Pos[nba4$Pos=="PG-SG"] <- "PG"
+nba3$Pos[nba3$Pos=="PG-SG"] <- "PG"
+
+#define Mykhailiuk  as KNN result, viz. "SG"
+nba4$Pos[nba4$Pos=="SF-SG"] <- "SG"
+nba3$Pos[nba3$Pos=="SF-SG"] <- "SG"
+
+#define Write as KNN result, viz. "SG"
+nba4$Pos[nba4$Pos=="SG-PG"] <- "SG"
+nba3$Pos[nba3$Pos=="SG-PG"] <- "SG"
+
+#define Powell as KNN result, viz. "SG"
+nba4$Pos[nba4$Pos=="SG-SF"] <- "SG"
+nba3$Pos[nba3$Pos=="SG-SF"] <- "SG"
+
+Dat <- nba4
+Dat2 <- nba3[-c(1,4:8,9,10,12,13,15,16,19,20)]
+
+Dat$Pos <- as.factor(Dat$Pos)
+
+table(nba4$Pos) #good
+```
+
+```{r}
+################### CSV SAVED ON APRIL 11th 2021 ####################
+#write.csv(Dat2, "NBAper.csv")
+
+## Create training and test data ##
+#source("C:/Users/super/Documents/MSA/Sp21/MSA 6440/Data/myfunctions.R")
+
+#source("C:/Users/super/Documents/MSA/Sp21/MSA 6440/Data/myfunctions.R")
+source("/Users/shegeb/Documents/BGSU/Spring 2021/data_mining/R_codes/myfunctions.R")
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0) ## set seed so that you get same partition each time
+p2 <- partition.2(Dat, 0.7) ## creating 70:30 partition
+training.data <- p2$data.train
+test.data <- p2$data.test
+
+nba.nolbl <- training.data[,-1]
+nba.scaled <- scale(nba.nolbl, center = TRUE, scale = TRUE)
+
+# https://predictivehacks.com/how-to-determine-the-number-of-clusters-of-k-means-in-r/
+library(factoextra)
+```
+
+```{r}
+library(NbClust)
+library(mclust)
+```
+
+```{r}
+set.seed(123)
+
+fviz_nbclust(nba.scaled, kmeans, method = "wss") +
+  geom_vline(xintercept = 2, linetype = 2)+
+  labs(subtitle = "Elbow method")
+```
+
+```{r}
+fviz_nbclust(nba.scaled, kmeans, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+```
+
+```{r}
+fviz_nbclust(nba.scaled, kmeans, nstart = 25,  method = "gap_stat", nboot = 500)+
+  labs(subtitle = "Gap statistic method") # none of these charts give us good idea for number of Clusters
+```
+
+```{r}
+############# Clustering ##################
+#### Mclust #####
+library(mclust)
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0)
+
+mc.list <- list()
+bic <- NULL
+for (k in 1:10){
+  mc <- Mclust(Dat[-1], k)
+  bic <- c(bic, mc$bic)
+  mc.list[[k]] <- c(mc.list, mc)
+}
+
+plot(seq(1,10,1), bic, type = "l", xlab = "Number of clusters")
+```
+
+```{r}
+plot(bic[1:10], type = "l", xlab = "Number of clusters")
+```
+
+```{r}
+maxbic <- which.max(bic[1:10])
+maxbic
+```
+
+```{r}
+mc3 <- Mclust(Dat[-1], maxbic)
+
+table(mc3$classification, Dat$Pos)
+```
+
+```{r}
+# Mclust Clustering Plots
+library(tidyr)
+library(ggplot2)
+
+dat.mc <- as.data.frame(t(mc3$parameters$mean))
+dat.mc$clusters <- row.names(dat.mc)
+
+# Percentages Clusters
+dat.mc1 <- dat.mc[c(1:5,15)]
+
+dat.g <- gather(dat.mc1, stats, mc3mean, -clusters)
+
+mc.1 <- ggplot(dat.g, aes(stats, mc3mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nMclust: Percentages") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+mc.1
+```
+
+```{r}
+# Offense Clusters
+dat.mc1 <- dat.mc[c(6,9,14,15)]
+
+dat.g <- gather(dat.mc1, stats, mc3mean, -clusters)
+
+mc.2 <- ggplot(dat.g, aes(stats, mc3mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nMclust: Offense") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+mc.2
+```
+
+```{r}
+# Defense Clusters
+dat.mc1 <- dat.mc[c(11,10,7,15)]
+
+dat.g <- gather(dat.mc1, stats, mc3mean, -clusters)
+
+mc.3 <- ggplot(dat.g, aes(stats, mc3mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nMclust: Defense") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+mc.3
+```
+
+```{r}
+# Special Clusters
+dat.mc1 <- dat.mc[c(12,13,15)]
+
+dat.g <- gather(dat.mc1, stats, mc3mean, -clusters)
+
+mc.4 <- ggplot(dat.g, aes(stats, mc3mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nMclust: Special") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+mc.4
+```
+
+```{r}
+#################
+#### Kmeans #####
+#################
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(1)
+
+### Rescale the data
+nba.scaled <- scale(Dat[-1], center = TRUE, scale = TRUE)
+nba.scaled.attr <- attributes(nba.scaled)
+
+km.list <- list()
+wss <- NULL
+for (k in 1:10){
+  tmp.wss <- NULL
+  ## Running kmeans 10 times for each k to get the best result
+  for (itr in 1:10){
+    set.seed(itr)
+    km <- kmeans(nba.scaled, k)
+    tmp.wss <- c(tmp.wss, km$tot.withinss)
+  }
+  select.seed <- which.min(tmp.wss)
+  set.seed(select.seed)
+  km <- kmeans(nba.scaled, k)
+  wss <- c(wss, km$tot.withinss)
+  km.list[[k]] <- c(km.list, km)
+}
+
+plot(seq(1,10,1), wss, type = "l", xlab = "Number of clusters")
+```
+
+```{r}
+km3 <- kmeans(nba.scaled, 3) #to match nicely with mclust choose 3, can try 4, too
+
+table(mc3$classification, km3$cluster)
+```
+
+```{r}
+# Manually match the labels, as much as possible, 
+# to the mclust classification for easier comparison
+km3id <- ifelse(km3$cluster == 3, 2, 
+                ifelse(km3$cluster == 2, 3,1))
+
+table(km3id, Dat$Pos)
+```
+
+```{r}
+table(mc3$classification, km3id)
+```
+
+```{r}
+# Convert the kmeans centroids to the original scale for plotting
+km3.centers.rescaled <-  km3$centers
+for (j in 1:14){
+  km3.centers.rescaled[,j] <- nba.scaled.attr$`scaled:center`[j] +
+    km3$centers[,j]*nba.scaled.attr$`scaled:scale`[j]
+}
+# Now change the indices to approximately match 
+# mclust classification for easier comparison
+km3.centers.rescaled.tmp <- km3.centers.rescaled
+km3.centers.rescaled[1,] <- km3.centers.rescaled.tmp[1,]
+km3.centers.rescaled[2,] <- km3.centers.rescaled.tmp[3,]
+km3.centers.rescaled[3,] <- km3.centers.rescaled.tmp[2,]
+
+# Kmeans Clustering Plots
+library(tidyr)
+library(ggplot2)
+
+dat.km <- as.data.frame(km3.centers.rescaled)
+dat.km$clusters <- row.names(dat.km)
+
+# Percentages Clusters
+dat.km1 <- dat.km[c(1:5,15)]
+
+dat.g <- gather(dat.km1, stats, km3mean, -clusters)
+
+km.1 <- ggplot(dat.g, aes(stats, km3mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nKmeans: Percentages") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+km.1
+```
+
+```{r}
+# Offense Clusters
+dat.km1 <- dat.km[c(6,9,14,15)]
+
+dat.g <- gather(dat.km1, stats, km3mean, -clusters)
+
+km.2 <- ggplot(dat.g, aes(stats, km3mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nKmeans: Offense") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+km.2
+```
+
+```{r}
+# Defense Clusters
+dat.km1 <- dat.km[c(11,10,7,15)]
+
+dat.g <- gather(dat.km1, stats, km3mean, -clusters)
+
+km.3 <- ggplot(dat.g, aes(stats, km3mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nKmeans: Defense") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+km.3
+```
+
+```{r}
+# Special Clusters
+dat.km1 <- dat.km[c(12,13,15)]
+
+dat.g <- gather(dat.km1, stats, km3mean, -clusters)
+
+km.4 <- ggplot(dat.g, aes(stats, km3mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nKmeans: Special") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+km.4
+```
+
+```{r}
+#### Hierarchical #####
+### Create distance matrix
+d <- dist(nba.scaled, method = "euclidean") 
+
+hc.complete <- hclust(d, method="ward.D2")
+plot(hc.complete) # display dendogram
+hc.complete.id <- cutree(hc.complete, k=3) # cut tree into 3 clusters
+rect.hclust(hc.complete, k = 3, border = "red")
+```
+
+```{r}
+#dev.copy2pdf(file = "E:/Data mining/Lecture Notes/plots/dend1.pdf")
+
+nba.hier <- Dat[-1]
+nba.hier$clusters <- as.data.frame(hc.complete.id)
+
+temp1 <- subset(nba.hier,nba.hier$clusters =='1')
+temp2 <- subset(nba.hier,nba.hier$clusters =='2')
+temp3 <- subset(nba.hier,nba.hier$clusters =='3')
+
+a <- colMeans(temp1)
+b <- colMeans(temp2)
+c <- colMeans(temp3)
+
+dat.hier <- rbind(a,b,c)
+dat.hier <- as.data.frame(dat.hier)
+dat.hier$clusters <- as.character(dat.hier$clusters)
+
+# Hierarchical Clustering Plots
+library(tidyr)
+library(ggplot2)
+
+# Percentages Clusters
+dat.hier1 <- dat.hier[c(1:5,15)]
+
+dat.g <- gather(dat.hier1, stats, hier3mean, -clusters)
+
+hier.1 <- ggplot(dat.g, aes(stats, hier3mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nHierarchical: Percentages") +
+  xlab(NULL) +
+  ylab(NULL)
+
+hier.1
+```
+
+```{r}
+# Offense Clusters
+dat.hier1 <- dat.hier[c(6,9,14,15)]
+
+dat.g <- gather(dat.hier1, stats, hier3mean, -clusters)
+
+hier.2 <- ggplot(dat.g, aes(stats, hier3mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nHierarchical: Offense") +
+  xlab(NULL) +
+  ylab(NULL)
+
+hier.2
+```
+
+```{r}
+# Defense Clusters
+dat.hier1 <- dat.hier[c(11,10,7,15)]
+
+dat.g <- gather(dat.hier1, stats, hier3mean, -clusters)
+
+hier.3 <- ggplot(dat.g, aes(stats, hier3mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nHierarchical: Defense") +
+  xlab(NULL) +
+  ylab(NULL)
+
+hier.3
+```
+
+```{r}
+# Special Clusters
+dat.hier1 <- dat.hier[c(12,13,15)]
+
+dat.g <- gather(dat.hier1, stats, hier3mean, -clusters)
+
+hier.4 <- ggplot(dat.g, aes(stats, hier3mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nHierarchical: Special") +
+  xlab(NULL) +
+  ylab(NULL)
+
+hier.4
+```
+
+```{r}
+# Table analysis
+t <- table(hc.complete.id, km3id)
+rownames(t) <- c("H 1", "H 2", "H 3")
+colnames(t) <- c("KM 1", "KM 2", "KM 3")
+
+t2 <- table(mc3$classification, hc.complete.id)
+rownames(t2) <- c("MC 1", "MC 2", "MC 3")
+colnames(t2) <- c("H 1", "H 2", "H 3")
+
+
+t3 <- table(km3id, mc3$classification)
+rownames(t3) <- c("KM 1", "KM 2", "KM 3")
+colnames(t3) <- c("MC 1", "MC 2", "MC 3")
+
+t
+```
+
+```{r}
+t2
+```
+
+```{r}
+t3
+```
+
+```{r}
+nba.clust <- cbind(Dat2, mc3$classification, km3id,hc.complete.id)
+colnames(nba.clust)[17] <- 'MCid'
+colnames(nba.clust)[18] <- 'KMid'
+colnames(nba.clust)[19] <- 'Hierid'
+
+nba.clust$MCid <- as.factor(nba.clust$MCid)
+nba.clust$KMid <- as.factor(nba.clust$KMid)
+nba.clust$Hierid <- as.factor(nba.clust$Hierid)
+
+nba.clust
+```
+
+```{r}
+################### CSV SAVED ON APRIL 9th 2021 ####################
+#write.csv(nba.clust, "nba.clust3.csv")
+
+# Compare Mcluster, Kmeans, and Hierarchical Clusters
+library(gridExtra)
+library(cowplot)
+
+#par(mfrow = c(2,1))
+plot_grid(mc.1, km.1, hier.1, align = "h", ncol = 3, rel_widths = c(3/10,3/10,4/10))
+```
+
+```{r}
+plot_grid(mc.2, km.2, hier.2, align = "h", ncol = 3, rel_widths = c(3/10,3/10,4/10))
+```
+
+```{r}
+plot_grid(mc.3, km.3, hier.3, align = "h", ncol = 3, rel_widths = c(3/10,3/10,4/10))
+```
+
+```{r}
+plot_grid(mc.4, km.4, hier.4, align = "h", ncol = 3, rel_widths = c(3/10,3/10,4/10))
+```
+
+```{r}
+#grid.arrange(mc.1, km.1, hier.1, nrow=1, ncol=3)
+#grid.arrange(mc.2, km.2, hier.2, nrow=1, ncol=3)
+#grid.arrange(mc.3, km.3, hier.3, nrow=1, ncol=3)
+#grid.arrange(mc.4, km.4, hier.4, nrow=1, ncol=3)
+
+# Clusters and Positions
+nbatoday <- nba.clust[,c(1,2,17,18,19)]
+
+dat.g <- gather(nbatoday[-1], type, cluster,-Pos)
+
+today <- ggplot(dat.g[-1], aes(type,fill=cluster)) +
+  geom_bar(position = "dodge") +
+  ggtitle("2020 NBA Cluster Distributions: Percentage Dataset")
+
+posclus.mc <- ggplot(nbatoday[-1], aes(Pos)) + 
+  geom_bar(aes(fill = MCid), stat = "count", position = "dodge") +
+  ggtitle("2020 NBA Position-Cluster Relation Mclust")
+
+posclus.km <- ggplot(nbatoday[-1], aes(Pos)) + 
+  geom_bar(aes(fill = KMid), stat = "count", position = "dodge") +
+  ggtitle("2020 NBA Position-Cluster Relation Kmeans")
+
+posclus.h <- ggplot(nbatoday[-1], aes(Pos)) + 
+  geom_bar(aes(fill = Hierid), stat = "count", position = "dodge") +
+  ggtitle("2020 NBA Position-Cluster Relation Hierarchical")
+
+posclus <- ggplot(dat.g, aes(Pos)) + 
+  geom_bar(aes(fill = cluster), stat = "count", position = "dodge") +
+  ggtitle("2020 NBA Position-Cluster: Percentage Dataset")
+
+today
+```
+
+```{r}
+posclus.mc
+```
+
+```{r}
+table(mc3$classification, Dat$Pos)
+```
+
+```{r}
+posclus.km
+```
+
+```{r}
+table(km3id, Dat$Pos)
+```
+
+```{r}
+posclus.h
+```
+
+```{r}
+table(hc.complete.id, Dat$Pos)
+```
+
+```{r}
+posclus
+```
+
+```{r}
+# Pairs plot view clusters
+nba.nolbl <- nba.clust[,-c(1,2,17,18,19)]
+nba.lbl.mc <- nba.clust[,17]
+nba.lbl.km <- nba.clust[,18]
+nba.lbl.h <- nba.clust[,19]
+n <- nrow(nba.nolbl)
+p <- ncol(nba.nolbl)
+
+col.seq <- c("red", "darkgreen", "navy")
+species.col.mc <- col.seq[as.numeric(nba.lbl.mc)]
+species.col.km <- col.seq[as.numeric(nba.lbl.km)]
+species.col.h <- col.seq[as.numeric(nba.lbl.h)]
+
+# Mclust
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[1:5], col = species.col.mc,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Model Based Cluster",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.mc)),
+       fill = unique(species.col.mc))
+```
+
+```{r}
+par(xpd = NA)
+
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[c(6,9,14,12)], col = species.col.mc,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Model Based Cluster",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.mc)),
+       fill = unique(species.col.mc))
+```
+
+```{r}
+par(xpd = NA)
+
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[c(11,10,7,13)], col = species.col.mc,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Model Based Cluster",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.mc)),
+       fill = unique(species.col.mc))
+```
+
+```{r}
+par(xpd = NA)
+
+# Kmeans
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[1:5], col = species.col.km,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Kmeans Clusters",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.km)),
+       fill = unique(species.col.km))
+```
+
+```{r}
+par(xpd = NA)
+
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[c(6,9,14,12)], col = species.col.km,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Kmeans Clusters",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.km)),
+       fill = unique(species.col.km))
+```
+
+```{r}
+par(xpd = NA)
+
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[c(11,10,7,13)], col = species.col.km,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Kmeans Clusters",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.km)),
+       fill = unique(species.col.km))
+```
+
+```{r}
+par(xpd = NA)
+
+# Hierarchical
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[1:5], col = species.col.h,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Hierarchical Clusters",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.h)),
+       fill = unique(species.col.h))
+```
+
+```{r}
+par(xpd = NA)
+
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[c(6,9,14,12)], col = species.col.h,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Hierarchical Clusters",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.h)),
+       fill = unique(species.col.h))
+```
+
+```{r}
+par(xpd = NA)
+
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[c(11,10,7,13)], col = species.col.h,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Hierarchical Clusters",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.h)),
+       fill = unique(species.col.h))
+```
+
+```{r}
+par(xpd = NA)
+
+# Help us define Cluster with background knowledge of NBA (e.g. height, strength, weight, etc.)
+MCid1 <- nba.clust[(nba.clust$MCid=="1"),]
+MCid2 <- nba.clust[(nba.clust$MCid=="2"),]
+MCid3 <- nba.clust[(nba.clust$MCid=="3"),]
+
+MCid1
+```
+
+```{r}
+MCid2
+```
+
+```{r}
+MCid3
+```
+
+```{r}
+KMid1 <- nba.clust[(nba.clust$KMid=="1"),]
+KMid2 <- nba.clust[(nba.clust$KMid=="2"),]
+KMid3 <- nba.clust[(nba.clust$KMid=="3"),]
+
+KMid1
+```
+
+```{r}
+KMid2
+```
+
+```{r}
+KMid3
+```
+
+```{r}
+Hid1 <- nba.clust[(nba.clust$Hierid=="1"),]
+Hid2 <- nba.clust[(nba.clust$Hierid=="2"),]
+Hid3 <- nba.clust[(nba.clust$Hierid=="3"),]
+
+Hid1
+```
+
+```{r}
+Hid2
+```
+
+```{r}
+Hid3
+```
+
+# ATTEMPTS AND MADE DATASET
+
+```{r}
+rm(list=ls())
+
+### Initialize data sets to work with
+# Webscrape Statistics from Baskballreference
+#library(rvest)
+#thelink <- xml2::read_html("https://www.basketball-reference.com/leagues/NBA_2021_per_game.html")
+#nba <- as.data.frame(thelink %>%html_nodes("table")%>%.[[1]] %>%html_table())
+
+# Remove repeated header row
+#unn <- subset(nba, nba$Rk != 'Rk')
+
+# Remove duplicated player records (duplicated if player traded, keep only 'Total' record)
+#nba2 <- unn[!duplicated(unn$Player),]
+
+# Convert regressor variables to integer values
+#i <- c(6:30)
+#nba2[ , i] <- apply(nba2[ , i], 2, function(x) as.numeric(as.character(x)))
+
+# Filter out players not having played >= [pct] of total games played
+#pct <- .7 #define percentage of games player must have played in as compared to max player
+#nba3 <- subset(nba2,nba2$G >= max(nba2$G)*pct)
+
+# Remove attempts and attempts made columns (as they are simple divisors and dividends of percentage columns)
+#nba4 <- nba3[-c(1,2,4:8,11,14,17,18,21)]
+#summary(nba4)
+
+################### CSV SAVED ON APRIL 8th 2021 ####################
+#write.csv(nba3, "nba3.csv")
+
+#nba3 <- read.csv('C:/Users/super/Documents/MSA/Sp21/MSA 6440/Final Project/nba3.csv')
+nba3 <-read.csv('/Users/shegeb/Documents/BGSU/Spring 2021/data_mining/6440 project/Dataset/nba3.csv')
+colnames(nba3)[11] <- 'FG%'
+colnames(nba3)[12] <- '3P'
+colnames(nba3)[13] <- '3PA'
+colnames(nba3)[14] <- '3P%'
+colnames(nba3)[15] <- '2P'
+colnames(nba3)[16] <- '2PA'
+colnames(nba3)[17] <- '2P%'
+colnames(nba3)[18] <- 'eF%'
+colnames(nba3)[21] <- 'FT%'
+
+nba4 <- nba3[-c(1,2,4:8,11,14,17,18,21)]
+
+# Construct position specific dataframes and assign values to specific positions
+table(nba4$Pos)
+```
+
+```{r}
+nba3[nba3$Pos =='C-PF',] #Kelly Olynyk
+```
+
+```{r}
+nba3[nba3$Pos =='PG-SG',] #James Harden
+```
+
+```{r}
+nba3[nba3$Pos =='SF-SG',] #Sviatoslav Mykhailiuk
+```
+
+```{r}
+nba3[nba3$Pos =='SG-PG',] # Delon Wright
+```
+
+```{r}
+nba3[nba3$Pos =='SG-SF',] # Hamidou Diallo & Norman Powell
+```
+
+```{r}
+################# KNN TO DEFINE PLAYERS ################# 
+#### Olynyk: C OR PF?? ####
+source("/Users/shegeb/Documents/BGSU/Spring 2021/data_mining/R_codes/myfunctions.R")
+
+
+knn <- subset(nba4,nba4$Pos =='C' | nba4$Pos =='PF')
+
+knn$Pos <- as.factor(knn$Pos)
+
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0)
+### create 70:30 partition
+p2 <- partition.2(knn, 0.7)
+training.data <- p2$data.train
+test.data <- p2$data.test
+
+### Rescale the data
+training.scaled <- scale(training.data[,-1], center = TRUE, scale = TRUE)
+training.scaled.wY <- cbind(training.scaled, training.data[,1])
+training.scaled.attr <- attributes(training.scaled)
+
+test.scaled <- scale(test.data[,-1], 
+                     center = training.scaled.attr$`scaled:center`, 
+                     scale = training.scaled.attr$`scaled:scale`)
+
+### fit k-nn model for k = 1, ..., 60
+library(FNN)
+library(caret)
+
+K <- 60
+kappa <- rep(0, K)
+for (kk in 1:K){
+  Knn <- knn(train = training.scaled, test = test.scaled,
+             cl = training.data[,1], k = kk)
+  c <- confusionMatrix(as.factor(Knn), as.factor(test.data[,1]), 
+                       positive = "C")
+  kappa[kk] <- c$overall["Kappa"]
+  cat("K", kk, "Kappa", kappa[kk], "\n")
+}
+```
+
+```{r}
+# create a plot for k vs. kappa
+plot(c(1:K), kappa, xlab = "k", ylab = "Kappa", type = "l", col = "blue")
+```
+
+```{r}
+max.k <- which.max(kappa)
+max.k
+```
+
+```{r}
+### Fit kNN model on a single new observation with k=[max.k] 
+x <- nba4[(nba4$Pos=="C-PF"),]
+x0 <- x[-1]
+
+x0.scaled <- scale(x0, center = training.scaled.attr$`scaled:center`, scale = training.scaled.attr$`scaled:scale`) 
+
+Knn <- knn(train = training.scaled, test = x0.scaled,
+           cl = training.data[,1], k = max.k)
+Knn
+```
+
+```{r}
+## labels of nearest neighbors
+Knn.attr <- attributes(Knn)
+training.data[Knn.attr$nn.index,1]
+```
+
+```{r}
+summary(training.data[Knn.attr$nn.index,1]) #Label as PF
+```
+
+```{r}
+#### HARDIN: PG OR SG?? ####
+knn <- subset(nba4,nba4$Pos =='PG' | nba4$Pos =='SG')
+
+knn$Pos <- as.factor(knn$Pos)
+
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0)
+### create 70:30 partition
+p2 <- partition.2(knn, 0.7)
+training.data <- p2$data.train
+test.data <- p2$data.test
+
+### Rescale the data
+training.scaled <- scale(training.data[,-1], center = TRUE, scale = TRUE)
+training.scaled.wY <- cbind(training.scaled, training.data[,1])
+training.scaled.attr <- attributes(training.scaled)
+
+test.scaled <- scale(test.data[,-1], 
+                     center = training.scaled.attr$`scaled:center`, 
+                     scale = training.scaled.attr$`scaled:scale`)
+
+### fit k-nn model for k = 1, ..., 60
+K <- 60
+kappa <- rep(0, K)
+for (kk in 1:K){
+  Knn <- knn(train = training.scaled, test = test.scaled,
+             cl = training.data[,1], k = kk)
+  c <- confusionMatrix(as.factor(Knn), as.factor(test.data[,1]), 
+                       positive = "PG")
+  kappa[kk] <- c$overall["Kappa"]
+  cat("K", kk, "Kappa", kappa[kk], "\n")
+}
+```
+
+```{r}
+# create a plot for k vs. kappa
+plot(c(1:K), kappa, xlab = "k", ylab = "Kappa", type = "l", col = "blue")
+```
+
+```{r}
+max.k <- which.max(kappa)
+max.k
+```
+
+```{r}
+### Fit kNN model on a single new observation with k=[max.k] 
+x <- nba4[(nba4$Pos=="PG-SG"),]
+x0 <- x[-1]
+
+x0.scaled <- scale(x0, center = training.scaled.attr$`scaled:center`, scale = training.scaled.attr$`scaled:scale`) 
+
+Knn <- knn(train = training.scaled, test = x0.scaled,
+           cl = training.data[,1], k = max.k)
+Knn
+```
+
+```{r}
+## labels of nearest neighbors
+Knn.attr <- attributes(Knn)
+training.data[Knn.attr$nn.index,1]
+```
+
+```{r}
+summary(training.data[Knn.attr$nn.index,1]) #label as PG
+```
+
+```{r}
+#### Mykhailiuk : SF OR SG?? ####
+knn <- subset(nba4,nba4$Pos =='SF' | nba4$Pos =='SG')
+
+knn$Pos <- as.factor(knn$Pos)
+
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0)
+### create 70:30 partition
+p2 <- partition.2(knn, 0.7)
+training.data <- p2$data.train
+test.data <- p2$data.test
+
+### Rescale the data
+training.scaled <- scale(training.data[,-1], center = TRUE, scale = TRUE)
+training.scaled.wY <- cbind(training.scaled, training.data[,1])
+training.scaled.attr <- attributes(training.scaled)
+
+test.scaled <- scale(test.data[,-1], 
+                     center = training.scaled.attr$`scaled:center`, 
+                     scale = training.scaled.attr$`scaled:scale`)
+
+### fit k-nn model for k = 1, ..., 60
+K <- 60
+kappa <- rep(0, K)
+for (kk in 1:K){
+  Knn <- knn(train = training.scaled, test = test.scaled,
+             cl = training.data[,1], k = kk)
+  c <- confusionMatrix(as.factor(Knn), as.factor(test.data[,1]), 
+                       positive = "SF")
+  kappa[kk] <- c$overall["Kappa"]
+  cat("K", kk, "Kappa", kappa[kk], "\n")
+}
+```
+
+```{r}
+# create a plot for k vs. kappa
+plot(c(1:K), kappa, xlab = "k", ylab = "Kappa", type = "l", col = "blue")
+```
+
+```{r}
+max.k <- which.max(kappa)
+max.k
+```
+
+```{r}
+### Fit kNN model on a single new observation with k=[max.k] 
+x <- nba4[(nba4$Pos=="SF-SG"),]
+x0 <- x[-1]
+
+x0.scaled <- scale(x0, center = training.scaled.attr$`scaled:center`, scale = training.scaled.attr$`scaled:scale`) 
+
+Knn <- knn(train = training.scaled, test = x0.scaled,
+           cl = training.data[,1], k = max.k)
+Knn
+```
+
+```{r}
+## labels of nearest neighbors
+Knn.attr <- attributes(Knn)
+training.data[Knn.attr$nn.index,1]
+```
+
+```{r}
+summary(training.data[Knn.attr$nn.index,1]) #label as SG
+```
+
+```{r}
+#### Wright: SG OR PG?? ####
+knn <- subset(nba4,nba4$Pos =='SG' | nba4$Pos =='PG')
+
+knn$Pos <- as.factor(knn$Pos)
+
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0)
+### create 70:30 partition
+p2 <- partition.2(knn, 0.7)
+training.data <- p2$data.train
+test.data <- p2$data.test
+
+### Rescale the data
+training.scaled <- scale(training.data[,-1], center = TRUE, scale = TRUE)
+training.scaled.wY <- cbind(training.scaled, training.data[,1])
+training.scaled.attr <- attributes(training.scaled)
+
+test.scaled <- scale(test.data[,-1], 
+                     center = training.scaled.attr$`scaled:center`, 
+                     scale = training.scaled.attr$`scaled:scale`)
+
+### fit k-nn model for k = 1, ..., 60
+K <- 60
+kappa <- rep(0, K)
+for (kk in 1:K){
+  Knn <- knn(train = training.scaled, test = test.scaled,
+             cl = training.data[,1], k = kk)
+  c <- confusionMatrix(as.factor(Knn), as.factor(test.data[,1]), 
+                       positive = "SG")
+  kappa[kk] <- c$overall["Kappa"]
+  cat("K", kk, "Kappa", kappa[kk], "\n")
+}
+```
+
+```{r}
+# create a plot for k vs. kappa
+plot(c(1:K), kappa, xlab = "k", ylab = "Kappa", type = "l", col = "blue")
+```
+
+```{r}
+max.k <- which.max(kappa)
+max.k
+```
+
+```{r}
+### Fit kNN model on a single new observation with k=[max.k] 
+x <- nba4[(nba4$Pos=="SG-PG"),]
+x0 <- x[-1]
+
+x0.scaled <- scale(x0, center = training.scaled.attr$`scaled:center`, scale = training.scaled.attr$`scaled:scale`) 
+
+Knn <- knn(train = training.scaled, test = x0.scaled,
+           cl = training.data[,1], k = max.k)
+Knn
+```
+
+```{r}
+## labels of nearest neighbors
+Knn.attr <- attributes(Knn)
+training.data[Knn.attr$nn.index,1]
+```
+
+```{r}
+summary(training.data[Knn.attr$nn.index,1]) #label as PG / SG*
+```
+
+```{r}
+table(knn$Pos) #majority rule, label SG
+```
+
+```{r}
+#### Diallo & Powell: SG OR SF?? ####
+knn <- subset(nba4,nba4$Pos =='SG' | nba4$Pos =='SF')
+
+knn$Pos <- as.factor(knn$Pos)
+
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0)
+### create 70:30 partition
+p2 <- partition.2(knn, 0.7)
+training.data <- p2$data.train
+test.data <- p2$data.test
+
+### Rescale the data
+training.scaled <- scale(training.data[,-1], center = TRUE, scale = TRUE)
+training.scaled.wY <- cbind(training.scaled, training.data[,1])
+training.scaled.attr <- attributes(training.scaled)
+
+test.scaled <- scale(test.data[,-1], 
+                     center = training.scaled.attr$`scaled:center`, 
+                     scale = training.scaled.attr$`scaled:scale`)
+
+### fit k-nn model for k = 1, ..., 60
+K <- 60
+kappa <- rep(0, K)
+for (kk in 1:K){
+  Knn <- knn(train = training.scaled, test = test.scaled,
+             cl = training.data[,1], k = kk)
+  c <- confusionMatrix(as.factor(Knn), as.factor(test.data[,1]), 
+                       positive = "SG")
+  kappa[kk] <- c$overall["Kappa"]
+  cat("K", kk, "Kappa", kappa[kk], "\n")
+}
+```
+
+```{r}
+# create a plot for k vs. kappa
+plot(c(1:K), kappa, xlab = "k", ylab = "Kappa", type = "l", col = "blue")
+```
+
+```{r}
+max.k <- which.max(kappa)
+max.k
+```
+
+```{r}
+### Fit kNN model on a single new observation with k=[max.k] 
+x <- nba4[(nba4$Pos=="SG-SF"),]
+x0 <- x[1,][-1] #Diallo
+x1 <- x[2,][-1] #Powell
+
+x0.scaled <- scale(x0, center = training.scaled.attr$`scaled:center`, scale = training.scaled.attr$`scaled:scale`) 
+x1.scaled <- scale(x1, center = training.scaled.attr$`scaled:center`, scale = training.scaled.attr$`scaled:scale`) 
+
+Knn0 <- knn(train = training.scaled, test = x0.scaled,
+            cl = training.data[,1], k = max.k)
+Knn0
+```
+
+```{r}
+Knn1 <- knn(train = training.scaled, test = x1.scaled,
+            cl = training.data[,1], k = max.k)
+Knn1
+```
+
+```{r}
+## labels of nearest neighbors
+Knn.attr <- attributes(Knn0)
+training.data[Knn.attr$nn.index,1]
+```
+
+```{r}
+summary(training.data[Knn.attr$nn.index,1]) #label Diallo as SG MAJORITY RULE
+```
+
+```{r}
+Knn.attr <- attributes(Knn1)
+training.data[Knn.attr$nn.index,1]
+```
+
+```{r}
+summary(training.data[Knn.attr$nn.index,1]) #label Powell as SG
+```
+
+```{r}
+table(knn$Pos)
+```
+
+```{r}
+#################### POP OUT OF KNN CLASSIFICIATION ###################
+#define Olynyk as KNN result, viz. "PF"
+nba4$Pos[nba4$Pos=="C-PF"] <- "PF"
+nba3$Pos[nba3$Pos=="C-PF"] <- "PF"
+
+#define Hardin as KNN result, viz. "PG"
+nba4$Pos[nba4$Pos=="PG-SG"] <- "PG"
+nba3$Pos[nba3$Pos=="PG-SG"] <- "PG"
+
+#define Mykhailiuk  as KNN result, viz. "SG"
+nba4$Pos[nba4$Pos=="SF-SG"] <- "SG"
+nba3$Pos[nba3$Pos=="SF-SG"] <- "SG"
+
+#define Write as KNN result, viz. "SG"
+nba4$Pos[nba4$Pos=="SG-PG"] <- "SG"
+nba3$Pos[nba3$Pos=="SG-PG"] <- "SG"
+
+#define Powell as KNN result, viz. "SG"
+nba4$Pos[nba4$Pos=="SG-SF"] <- "SG"
+nba3$Pos[nba3$Pos=="SG-SF"] <- "SG"
+
+Dat <- nba4
+Dat2 <- nba3[-c(1,4:8,11,14,17,18,21)]
+
+Dat$Pos <- as.factor(Dat$Pos)
+Dat2$Pos <- as.factor(Dat2$Pos)
+
+################### CSV SAVED ON APRIL 11th 2021 ####################
+#write.csv(Dat2, "NBAppa.csv")
+
+## Create training and test data ##
+#source("C:/Users/super/Documents/MSA/Sp21/MSA 6440/Data/myfunctions.R")
+source("/Users/shegeb/Documents/BGSU/Spring 2021/data_mining/R_codes/myfunctions.R")
+
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0) ## set seed so that you get same partition each time
+p2 <- partition.2(Dat, 0.7) ## creating 70:30 partition
+training.data <- p2$data.train
+test.data <- p2$data.test
+
+nba.nolbl <- training.data[,-1]
+nba.scaled <- scale(nba.nolbl, center = TRUE, scale = TRUE)
+
+# https://predictivehacks.com/how-to-determine-the-number-of-clusters-of-k-means-in-r/
+library(factoextra)
+library(NbClust)
+library(mclust)
+
+set.seed(123)
+
+fviz_nbclust(nba.scaled, kmeans, method = "wss") +
+  geom_vline(xintercept = 2, linetype = 2)+
+  labs(subtitle = "Elbow method")
+```
+
+```{r}
+fviz_nbclust(nba.scaled, kmeans, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+```
+
+```{r}
+fviz_nbclust(nba.scaled, kmeans, nstart = 25,  method = "gap_stat", nboot = 500)+
+  labs(subtitle = "Gap statistic method") # Let's double check with Mclust
+```
+
+```{r}
+############# Clustering ##################
+#### Mclust #####
+library(mclust)
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0)
+
+mc.list <- list()
+bic <- NULL
+for (k in 1:10){
+  mc <- Mclust(Dat[-1], k)
+  bic <- c(bic, mc$bic)
+  mc.list[[k]] <- c(mc.list, mc)
+}
+
+plot(seq(1,10,1), bic, type = "l", xlab = "Number of clusters")
+```
+
+```{r}
+plot(bic[1:10], type = "l", xlab = "Number of clusters")
+```
+
+```{r}
+maxbic <- which.max(bic[1:10])
+maxbic # cross-checked with gap-statistic clustering
+```
+
+```{r}
+mc4 <- Mclust(Dat[-1], maxbic)
+
+table(mc4$classification, Dat$Pos)
+```
+
+```{r}
+# Mclust Clustering Plots
+library(tidyr)
+library(ggplot2)
+
+dat.mc <- as.data.frame(t(mc4$parameters$mean))
+dat.mc$clusters <- row.names(dat.mc)
+
+# Shots Clusters
+dat.mc1 <- dat.mc[c(1:8,18)]
+
+dat.g <- gather(dat.mc1, stats, mc4mean, -clusters)
+
+mc.1 <- ggplot(dat.g, aes(stats, mc4mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nMclust: Shots") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+mc.1
+```
+
+```{r}
+# Offense Clusters
+dat.mc1 <- dat.mc[c(9,12,17,18)]
+
+dat.g <- gather(dat.mc1, stats, mc4mean, -clusters)
+
+mc.2 <- ggplot(dat.g, aes(stats, mc4mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nMclust: Offense") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+mc.2
+```
+
+```{r}
+# Defense Clusters
+dat.mc1 <- dat.mc[c(14,13,10,18)]
+
+dat.g <- gather(dat.mc1, stats, mc4mean, -clusters)
+
+mc.3 <- ggplot(dat.g, aes(stats, mc4mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nMclust: Defense") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+mc.3
+```
+
+```{r}
+# Special Clusters
+dat.mc1 <- dat.mc[c(15,16,18)]
+
+dat.g <- gather(dat.mc1, stats, mc4mean, -clusters)
+
+mc.4 <- ggplot(dat.g, aes(stats, mc4mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nMclust: Special") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+mc.4
+```
+
+```{r}
+#### Kmeans #####
+RNGkind (sample.kind = "Rounding")
+```
+
+```{r}
+set.seed(1)
+
+### Rescale the data
+nba.scaled <- scale(Dat[-1], center = TRUE, scale = TRUE)
+nba.scaled.attr <- attributes(nba.scaled)
+
+km.list <- list()
+wss <- NULL
+for (k in 1:10){
+  tmp.wss <- NULL
+  ## Running kmeans 10 times for each k to get the best result
+  for (itr in 1:10){
+    set.seed(itr)
+    km <- kmeans(nba.scaled, k)
+    tmp.wss <- c(tmp.wss, km$tot.withinss)
+  }
+  select.seed <- which.min(tmp.wss)
+  set.seed(select.seed)
+  km <- kmeans(nba.scaled, k)
+  wss <- c(wss, km$tot.withinss)
+  km.list[[k]] <- c(km.list, km)
+}
+
+plot(seq(1,10,1), wss, type = "l", xlab = "Number of clusters")
+```
+
+```{r}
+km4 <- kmeans(nba.scaled, 4)
+
+table(mc4$classification, km4$cluster)
+```
+
+```{r}
+# Manually match the labels, as much as possible, 
+# to the mclust classification for easier comparison
+km4id <- ifelse(km4$cluster == 4, 1, 
+                ifelse(km4$cluster == 3, 2,
+                       ifelse(km4$cluster == 2, 4, 3)))
+
+table(km4id, Dat$Pos) 
+```
+
+```{r}
+table(mc4$classification, km4id)
+```
+
+```{r}
+# Convert the kmeans centroids to the original scale for plotting
+km4.centers.rescaled <-  km4$centers
+for (j in 1:17){
+  km4.centers.rescaled[,j] <- nba.scaled.attr$`scaled:center`[j] +
+    km4$centers[,j]*nba.scaled.attr$`scaled:scale`[j]
+}
+# Now change the indices to approximately match 
+# mclust classification for easier comparison
+km4.centers.rescaled.tmp <- km4.centers.rescaled
+km4.centers.rescaled[1,] <- km4.centers.rescaled.tmp[4,]
+km4.centers.rescaled[2,] <- km4.centers.rescaled.tmp[3,]
+km4.centers.rescaled[3,] <- km4.centers.rescaled.tmp[1,]
+km4.centers.rescaled[4,] <- km4.centers.rescaled.tmp[2,]
+
+# Kmeans Clustering Plots
+library(tidyr)
+library(ggplot2)
+
+dat.km <- as.data.frame(km4.centers.rescaled)
+dat.km$clusters <- row.names(dat.km)
+
+# Shots Clusters
+dat.km1 <- dat.km[c(1:8,18)]
+
+dat.g <- gather(dat.km1, stats, km4mean, -clusters)
+
+km.1 <- ggplot(dat.g, aes(stats, km4mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nKmeans: Shots") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+km.1
+```
+
+```{r}
+# Offense Clusters
+dat.km1 <- dat.km[c(9,12,17,18)]
+
+dat.g <- gather(dat.km1, stats, km4mean, -clusters)
+
+km.2 <- ggplot(dat.g, aes(stats, km4mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nKmeans: Offense") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+km.2
+```
+
+```{r}
+# Defense Clusters
+dat.km1 <- dat.km[c(14,13,10,18)]
+
+dat.g <- gather(dat.km1, stats, km4mean, -clusters)
+
+km.3 <- ggplot(dat.g, aes(stats, km4mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nKmeans: Defense") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+km.3
+```
+
+```{r}
+# Special Clusters
+dat.km1 <- dat.km[c(15,16,18)]
+
+dat.g <- gather(dat.km1, stats, km4mean, -clusters)
+
+km.4 <- ggplot(dat.g, aes(stats, km4mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nKmeans: Special") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+km.4
+```
+
+```{r}
+#### Hierarchical #####
+### Create distance matrix
+d <- dist(nba.scaled, method = "euclidean") 
+
+hc.complete <- hclust(d, method="ward.D2")
+plot(hc.complete) # display dendogram
+hc.complete.id <- cutree(hc.complete, k=4) # cut tree into 3 clusters
+rect.hclust(hc.complete, k = 4, border = "red")
+```
+
+```{r}
+#dev.copy2pdf(file = "E:/Data mining/Lecture Notes/plots/dend1.pdf")
+
+nba.hier <- Dat[-1]
+nba.hier$clusters <- as.data.frame(hc.complete.id)
+
+temp1 <- subset(nba.hier,nba.hier$clusters =='1')
+temp2 <- subset(nba.hier,nba.hier$clusters =='2')
+temp3 <- subset(nba.hier,nba.hier$clusters =='3')
+temp4 <- subset(nba.hier,nba.hier$clusters =='4')
+
+a <- colMeans(temp1)
+b <- colMeans(temp2)
+c <- colMeans(temp3)
+d <- colMeans(temp4)
+
+dat.hier <- rbind(a,b,c,d)
+dat.hier <- as.data.frame(dat.hier)
+dat.hier$clusters <- as.character(dat.hier$clusters)
+
+# Hierarchical Clustering Plots
+library(tidyr)
+library(ggplot2)
+
+# Shots Clusters
+dat.hier1 <- dat.hier[c(1:8,18)]
+
+dat.g <- gather(dat.hier1, stats, hier4mean, -clusters)
+
+hier.1 <- ggplot(dat.g, aes(stats, hier4mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nHierarchical: Shots") +
+  xlab(NULL) +
+  ylab(NULL)
+
+hier.1
+```
+
+```{r}
+# Offense Clusters
+dat.hier1 <- dat.hier[c(9,12,17,18)]
+
+dat.g <- gather(dat.hier1, stats, hier4mean, -clusters)
+
+hier.2 <- ggplot(dat.g, aes(stats, hier4mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nHierarchical: Offense") +
+  xlab(NULL) +
+  ylab(NULL)
+
+hier.2
+```
+
+```{r}
+# Defense Clusters
+dat.hier1 <- dat.hier[c(14,13,10,18)]
+
+dat.g <- gather(dat.hier1, stats, hier4mean, -clusters)
+
+hier.3 <- ggplot(dat.g, aes(stats, hier4mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nHierarchical: Defense") +
+  xlab(NULL) +
+  ylab(NULL)
+
+hier.3
+```
+
+```{r}
+# Special Clusters
+dat.hier1 <- dat.hier[c(15,16,18)]
+
+dat.g <- gather(dat.hier1, stats, hier4mean, -clusters)
+
+hier.4 <- ggplot(dat.g, aes(stats, hier4mean)) + 
+  geom_bar(aes(fill = clusters), stat = "identity", position = "dodge") +
+  ggtitle("Clustering using \nHierarchical: Special") +
+  xlab(NULL) +
+  ylab(NULL)
+
+hier.4
+```
+
+```{r}
+# Table analysis
+t <- table(km4id, hc.complete.id)
+colnames(t) <- c("H 1", "H 2", "H 3", "H 4")
+rownames(t) <- c("KM 1", "KM 2", "KM 3", "KM 4")
+
+t2 <- table(mc4$classification, hc.complete.id) 
+colnames(t2) <- c("H 1", "H 2", "H 3", "H 4")
+rownames(t2) <- c("MC 1", "MC 2", "MC 3", "MC 4")
+
+table(mc4$classification, km4id)
+```
+
+```{r}
+t
+```
+
+```{r}
+t2
+```
+
+```{r}
+nba.clust <- cbind(Dat2, mc4$classification, km4id,hc.complete.id)
+colnames(nba.clust)[20] <- 'MCid'
+colnames(nba.clust)[21] <- 'KMid'
+colnames(nba.clust)[22] <- 'Hierid'
+
+nba.clust$MCid <- as.factor(nba.clust$MCid)
+nba.clust$KMid <- as.factor(nba.clust$KMid)
+nba.clust$Hierid <- as.factor(nba.clust$Hierid)
+
+nba.clust
+```
+
+```{r}
+################### CSV SAVED ON APRIL 8th 2021 ####################
+#write.csv(nba.clust, "nba.clust4.csv")
+
+# Compare Mcluster, Kmeans, and Hierarchical Clusters
+library(gridExtra)
+library(cowplot)
+
+#par(mfrow = c(2,1))
+plot_grid(mc.1, km.1, hier.1, align = "h", ncol = 3, rel_widths = c(3/10,3/10,4/10))
+```
+
+```{r}
+plot_grid(mc.2, km.2, hier.2, align = "h", ncol = 3, rel_widths = c(3/10,3/10,4/10))
+```
+
+```{r}
+plot_grid(mc.3, km.3, hier.3, align = "h", ncol = 3, rel_widths = c(3/10,3/10,4/10))
+```
+
+```{r}
+plot_grid(mc.4, km.4, hier.4, align = "h", ncol = 3, rel_widths = c(3/10,3/10,4/10))
+```
+
+```{r}
+#grid.arrange(mc.1, km.1, hier.1, nrow=1, ncol=3)
+#grid.arrange(mc.2, km.2, hier.2, nrow=1, ncol=3)
+#grid.arrange(mc.3, km.3, hier.3, nrow=1, ncol=3)
+#grid.arrange(mc.4, km.4, hier.4, nrow=1, ncol=3)
+
+# Clusters and Positions
+nbatoday <- nba.clust[,c(1,2,20,21,22)]
+
+dat.g <- gather(nbatoday[-1], type, cluster,-Pos)
+
+today <- ggplot(dat.g[-1], aes(type,fill=cluster)) +
+  geom_bar(position = "dodge") +
+  ggtitle("2020 NBA Cluster Distributions: A&M Dataset")
+
+posclus.mc <- ggplot(nbatoday[-1], aes(Pos)) + 
+  geom_bar(aes(fill = MCid), stat = "count", position = "dodge") +
+  ggtitle("2020 NBA Position-Cluster Relation Mclust")
+
+posclus.km <- ggplot(nbatoday[-1], aes(Pos)) + 
+  geom_bar(aes(fill = KMid), stat = "count", position = "dodge") +
+  ggtitle("2020 NBA Position-Cluster Relation Kmeans")
+
+posclus.h <- ggplot(nbatoday[-1], aes(Pos)) + 
+  geom_bar(aes(fill = Hierid), stat = "count", position = "dodge") +
+  ggtitle("2020 NBA Position-Cluster Relation Hierarchical")
+
+posclus <- ggplot(dat.g, aes(Pos)) + 
+  geom_bar(aes(fill = cluster), stat = "count", position = "dodge") +
+  ggtitle("2020 NBA Position-Cluster: A&M Dataset")
+
+today
+```
+
+```{r}
+posclus.mc
+```
+
+```{r}
+table(mc4$classification, Dat$Pos)
+```
+
+```{r}
+posclus.km
+```
+
+```{r}
+table(km4id, Dat$Pos)
+```
+
+```{r}
+posclus.h
+```
+
+```{r}
+table(hc.complete.id, Dat$Pos)
+```
+
+```{r}
+posclus
+```
+
+```{r}
+# Pairs plot view clusters
+nba.nolbl <- nba.clust[,-c(1,2,20,21,22)]
+nba.lbl.mc <- nba.clust[,20]
+nba.lbl.km <- nba.clust[,21]
+nba.lbl.h <- nba.clust[,22]
+n <- nrow(nba.nolbl)
+p <- ncol(nba.nolbl)
+
+col.seq <- c("red", "darkgreen", "lightblue", "purple")
+species.col.mc <- col.seq[as.numeric(nba.lbl.mc)]
+species.col.km <- col.seq[as.numeric(nba.lbl.km)]
+species.col.h <- col.seq[as.numeric(nba.lbl.h)]
+
+# Mclust
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[1:8], col = species.col.mc,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Model Based Clusters",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.mc)),
+       fill = unique(species.col.mc))
+```
+
+```{r}
+par(xpd = NA)
+
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[c(9,12,17,15)], col = species.col.mc,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Model Based Clusters",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.mc)),
+       fill = unique(species.col.mc))
+```
+
+```{r}
+par(xpd = NA)
+
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[c(14,13,10,16)], col = species.col.mc,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Model Based Clusters",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.mc)),
+       fill = unique(species.col.mc))
+```
+
+```{r}
+par(xpd = NA)
+
+# Kmeans
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[1:8], col = species.col.km,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Kmeans Clusters",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.km)),
+       fill = unique(species.col.km))
+```
+
+```{r}
+par(xpd = NA)
+
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[c(9,12,17,15)], col = species.col.km,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Kmeans Clusters",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.km)),
+       fill = unique(species.col.km))
+```
+
+```{r}
+par(xpd = NA)
+
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[c(14,13,10,16)], col = species.col.km,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Kmeans Clusters",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.km)),
+       fill = unique(species.col.km))
+
+```
+
+```{r}
+par(xpd = NA)
+
+# Hierarchical
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[1:8], col = species.col.h,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Hierarchical Clusters",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.h)),
+       fill = unique(species.col.h))
+```
+
+```{r}
+par(xpd = NA)
+
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[c(9,12,17,15)], col = species.col.h,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Hierarchical Clusters",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.h)),
+       fill = unique(species.col.h))
+```
+
+```{r}
+par(xpd = NA)
+
+par(oma=c(2,2,4,1), mar = c(4,4,4,1) + 0.1)
+pairs(nba.nolbl[c(14,13,10,16)], col = species.col.h,
+      lower.panel = NULL, cex.labels=2, pch=19, cex = 1.2)
+mtext(text= "Hierarchical Clusters",side=3,line=3, font=2,
+      cex = 1.25,outer=TRUE)
+legend(x = 0.005, y = 0.3, cex = 1.2, bty = "n",
+       legend = as.character(levels(nba.lbl.h)),
+       fill = unique(species.col.h))
+```
+
+```{r}
+par(xpd = NA)
+
+# Help us define Cluster with background knowledge of NBA (e.g. height, strength, weight, etc.)
+MCid1 <- nba.clust[(nba.clust$MCid=="1"),]
+MCid2 <- nba.clust[(nba.clust$MCid=="2"),]
+MCid3 <- nba.clust[(nba.clust$MCid=="3"),]
+MCid4 <- nba.clust[(nba.clust$MCid=="4"),]
+
+MCid1
+```
+
+```{r}
+MCid2
+```
+
+```{r}
+MCid3
+```
+
+```{r}
+MCid4
+```
+
+```{r}
+KMid1 <- nba.clust[(nba.clust$KMid=="1"),]
+KMid2 <- nba.clust[(nba.clust$KMid=="2"),]
+KMid3 <- nba.clust[(nba.clust$KMid=="3"),]
+KMid4 <- nba.clust[(nba.clust$KMid=="4"),]
+
+KMid1
+```
+
+```{r}
+KMid2
+```
+
+```{r}
+KMid3
+```
+
+```{r}
+KMid4
+```
+
+```{r}
+Hid1 <- nba.clust[(nba.clust$Hierid=="1"),]
+Hid2 <- nba.clust[(nba.clust$Hierid=="2"),]
+Hid3 <- nba.clust[(nba.clust$Hierid=="3"),]
+Hid4 <- nba.clust[(nba.clust$Hierid=="4"),]
+
+Hid1
+```
+
+```{r}
+Hid2
+```
+
+```{r}
+Hid3
+```
+
+```{r}
+Hid4
+```
+
+# EXTENSION NBA CHAMPIONSHIP
+
+```{r}
+rm(list=ls())
+library(rvest)
+
+nba.clust.x <- read.csv('/Users/shegeb/Documents/BGSU/Spring 2021/data_mining/6440 project/Dataset/nba.clust3.csv')
+  #read.csv('C:/Users/super/Documents/MSA/Sp21/MSA 6440/Final Project/nba.clust3.csv')
+colnames(nba.clust.x)[3] <- 'FG%'
+colnames(nba.clust.x)[4] <- '3P%'
+colnames(nba.clust.x)[5] <- '2P%'
+colnames(nba.clust.x)[6] <- 'eF%'
+colnames(nba.clust.x)[7] <- 'FT%'
+
+nba.clust.x$MCid <- as.factor(nba.clust.x$MCid)
+nba.clust.x$KMid <- as.factor(nba.clust.x$KMid)
+nba.clust.x$Hierid <- as.factor(nba.clust.x$Hierid)
+
+nba.clust <- nba.clust.x[-2]
+
+####### Post Analysis Interesting Question: Champion Clusters ##############
+####### 2020 Champions: Los Angeles Lakers ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/LAL/2020.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+#curl::curl("https://www.basketball-reference.com/teams/LAL/2020.html") %>% read_html()
+```
+
+
+```{r}
+dat4 <- dat3[-1]
+
+#### Lakers categorizations McCluster####
+knnMC <- nba.clust[-c(1,17,18)]
+
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+source("/Users/shegeb/Documents/BGSU/Spring 2021/data_mining/R_codes/myfunctions.R")
+set.seed(0)
+
+#source("C:/Users/super/Documents/MSA/Sp21/MSA 6440/Data/myfunctions.R")
+
+### create 70:30 partition
+p2 <- partition.2(knnMC, 0.7)
+training.data.mc <- p2$data.train
+test.data.mc <- p2$data.test
+
+### Rescale the data
+training.scaled.mc <- scale(training.data.mc[,-15], center = TRUE, scale = TRUE)
+training.scaled.wY.mc <- cbind(training.scaled.mc, training.data.mc[,15])
+training.scaled.attr.mc <- attributes(training.scaled.mc)
+
+test.scaled.mc <- scale(test.data.mc[,-15], 
+                        center = training.scaled.attr.mc$`scaled:center`, 
+                        scale = training.scaled.attr.mc$`scaled:scale`)
+
+### fit k-nn model for k = 1, ..., 60
+library(FNN)
+library(caret)
+
+K <- 60
+kappa <- rep(0, K)
+for (kk in 1:K){
+  knnMC <- knn(train = training.scaled.mc, test = test.scaled.mc,
+               cl = training.data.mc[,15], k = kk)
+  c <- confusionMatrix(as.factor(knnMC), as.factor(test.data.mc[,15]), 
+                       positive = "C")
+  kappa[kk] <- c$overall["Kappa"]
+  cat("K", kk, "Kappa", kappa[kk], "\n")
+}
+```
+
+```{r}
+# create a plot for k vs. kappa
+plot(c(1:K), kappa, xlab = "k", ylab = "Kappa", type = "l", col = "blue")
+```
+
+```{r}
+max.kmc <- which.max(kappa)
+max.kmc
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+######Lakers categorizations Kmeans#########
+knnKM <- nba.clust[-c(1,16,18)]
+
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0)
+### create 70:30 partition
+p2 <- partition.2(knnKM, 0.7)
+training.data.km <- p2$data.train
+test.data.km <- p2$data.test
+
+### Rescale the data
+training.scaled.km <- scale(training.data.km[,-15], center = TRUE, scale = TRUE)
+training.scaled.wY.km <- cbind(training.scaled.km, training.data.km[,15])
+training.scaled.attr.km <- attributes(training.scaled.km)
+
+test.scaled.km <- scale(test.data.km[,-15], 
+                        center = training.scaled.attr.km$`scaled:center`, 
+                        scale = training.scaled.attr.km$`scaled:scale`)
+
+### fit k-nn model for k = 1, ..., 60
+K <- 60
+kappa <- rep(0, K)
+for (kk in 1:K){
+  knnMC <- knn(train = training.scaled.km, test = test.scaled.km,
+               cl = training.data.km[,15], k = kk)
+  c <- confusionMatrix(as.factor(knnMC), as.factor(test.data.km[,15]), 
+                       positive = "C")
+  kappa[kk] <- c$overall["Kappa"]
+  cat("K", kk, "Kappa", kappa[kk], "\n")
+}
+```
+
+```{r}
+# create a plot for k vs. kappa
+plot(c(1:K), kappa, xlab = "k", ylab = "Kappa", type = "l", col = "blue")
+```
+
+```{r}
+max.kkm <- which.max(kappa)
+max.kkm
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+###### categorizations Hierarchical #########
+knnH <- nba.clust[-c(1,16,17)]
+
+RNGkind (sample.kind = "Rounding") 
+```
+
+```{r}
+set.seed(0)
+### create 70:30 partition
+p2 <- partition.2(knnH, 0.7)
+training.data.h <- p2$data.train
+test.data.h <- p2$data.test
+
+### Rescale the data
+training.scaled.h <- scale(training.data.h[,-15], center = TRUE, scale = TRUE)
+training.scaled.wY.h <- cbind(training.scaled.h, training.data.h[,15])
+training.scaled.attr.h <- attributes(training.scaled.h)
+
+test.scaled.h <- scale(test.data.h[,-15], 
+                       center = training.scaled.attr.h$`scaled:center`, 
+                       scale = training.scaled.attr.h$`scaled:scale`)
+
+### fit k-nn model for k = 1, ..., 60
+K <- 60
+kappa <- rep(0, K)
+for (kk in 1:K){
+  knnMC <- knn(train = training.scaled.h, test = test.scaled.h,
+               cl = training.data.h[,15], k = kk)
+  c <- confusionMatrix(as.factor(knnMC), as.factor(test.data.h[,15]), 
+                       positive = "C")
+  kappa[kk] <- c$overall["Kappa"]
+  cat("K", kk, "Kappa", kappa[kk], "\n")
+}
+```
+
+```{r}
+# create a plot for k vs. kappa
+plot(c(1:K), kappa, xlab = "k", ylab = "Kappa", type = "l", col = "blue")
+```
+
+```{r}
+max.h <- which.max(kappa)
+max.h
+```
+
+```{r}
+max.h <- 3 #1 too low and 3 has same kappa
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+lakers2020 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(lakers2020)[4] <- 'Hierid'
+
+lakers2020
+```
+
+```{r}
+####### 2019 Champions: Toronto Raptors ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/TOR/2019.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+
+### Fit kNN model on Raptors3 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+raptors2019 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(raptors2019)[4] <- 'Hierid'
+
+raptors2019
+```
+
+```{r}
+####### 2018 Champions: Golden State Warriors ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/GSW/2018.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+
+### Fit kNN model on Raptors3 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+warriors2018 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(warriors2018)[4] <- 'Hierid'
+
+warriors2018
+```
+
+```{r}
+####### 2017 Champions: Golden State Warriors ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/GSW/2017.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+
+### Fit kNN model on Raptors3 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+warriors2017 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(warriors2017)[4] <- 'Hierid'
+
+warriors2017
+```
+
+```{r}
+####### 2016 Champions: Cleveland Cavaliers ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/CLE/2016.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Raptors3 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+cavaliers2016 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(cavaliers2016)[4] <- 'Hierid'
+
+cavaliers2016
+```
+
+```{r}
+####### 2015 Champions: Golden State Warriors ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/GSW/2015.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Raptors3 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+warriors2015 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(warriors2015)[4] <- 'Hierid'
+
+warriors2015
+```
+
+```{r}
+####### 2014 Champions: San Antonio Spurs ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/SAS/2014.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Raptors3 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+spurs2014 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(spurs2014)[4] <- 'Hierid'
+
+spurs2014
+```
+
+```{r}
+####### 2013 Champions: Miami Heat ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/MIA/2013.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Raptors3 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+heat2013 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(heat2013)[4] <- 'Hierid'
+
+heat2013
+```
+
+```{r}
+####### 2012 Champions: Miami Heat ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/MIA/2012.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Raptors3 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+heat2012 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(heat2012)[4] <- 'Hierid'
+
+heat2012
+```
+
+```{r}
+####### 2011 Champions: Dallas Mavericks ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/DAL/2011.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Raptors3 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+mavericks2011 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(mavericks2011)[4] <- 'Hierid'
+
+mavericks2011
+```
+
+```{r}
+########### OLD TIMER CHAMPIONS CATEGORIZED WITH MODELED CATEGORIES ###################
+####### 1980 Champions: Los Angeles Lakers ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/LAL/1980.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+
+### Fit kNN model on Lakers 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+lakers1980 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(lakers1980)[4] <- 'Hierid'
+
+lakers1980
+```
+
+```{r}
+####### 1981 Champions: Boston Celtics ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/BOS/1981.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+
+### Fit kNN model on Celtics 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Celtics 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+celtics1981 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(celtics1981)[4] <- 'Hierid'
+
+celtics1981
+```
+
+```{r}
+####### 1982 Champions: Los Angeles Lakers ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/LAL/1982.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+
+### Fit kNN model on Lakers 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+lakers1982 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(lakers1982)[4] <- 'Hierid'
+
+lakers1982
+```
+
+```{r}
+####### 1983 Champions: Philadelphia 76ers ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/PHI/1983.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on 76ers 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on 76ers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+s76ers1983 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(s76ers1983)[4] <- 'Hierid'
+
+s76ers1983
+```
+
+```{r}
+####### 1984 Champions: Boston Celtics ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/BOS/1984.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Celtics 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Celtics 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+celtics1984 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(celtics1984)[4] <- 'Hierid'
+
+celtics1984
+```
+
+```{r}
+####### 1985 Champions: Los Angeles Lakers ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/LAL/1985.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Lakers 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+lakers1985 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(lakers1985)[4] <- 'Hierid'
+
+lakers1985
+```
+
+```{r}
+####### 1986 Champions: Boston Celtics ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/BOS/1986.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Celtics 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Celtics 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+celtics1986 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(celtics1986)[4] <- 'Hierid'
+
+celtics1986
+```
+
+```{r}
+####### 1987 Champions: Los Angeles Lakers ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/LAL/1987.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Lakers 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+celtics1987 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(celtics1987)[4] <- 'Hierid'
+
+celtics1987
+```
+
+```{r}
+####### 1988 Champions: Los Angeles Lakers ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/LAL/1988.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Lakers 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+lakers1988 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(lakers1988)[4] <- 'Hierid'
+
+lakers1988
+```
+
+```{r}
+####### 1989 Champions: Detroit Pistons ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/DET/1989.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+
+### Fit kNN model on Pistons 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Pistons 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+pistons1989 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(pistons1989)[4] <- 'Hierid'
+
+pistons1989
+```
+
+```{r}
+####### 1990 Champions: Detroit Pistons ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/DET/1990.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+
+### Fit kNN model on Pistons 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Pistons 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+pistons1990 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(pistons1990)[4] <- 'Hierid'
+
+pistons1990
+```
+
+```{r}
+####### 1991 Champions: Chicago Bulls ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/CHI/1991.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Bulls 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Bulls 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+bulls1991 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(bulls1991)[4] <- 'Hierid'
+
+bulls1991
+```
+
+```{r}
+####### 1992 Champions: Chicago Bulls ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/CHI/1992.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Bulls 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Bulls 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+bulls1992 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(bulls1992)[4] <- 'Hierid'
+
+bulls1992
+```
+
+```{r}
+####### 1993 Champions: Chicago Bulls ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/CHI/1993.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Bulls 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Bulls 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+bulls1993 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(bulls1993)[4] <- 'Hierid'
+
+bulls1993
+```
+
+```{r}
+####### 1994 Champions: Houston Rockets ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/HOU/1994.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Rockets 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Rockets 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+rockets1994 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(rockets1994)[4] <- 'Hierid'
+
+rockets1994
+```
+
+```{r}
+####### 1995 Champions: Houston Rockets ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/HOU/1995.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+
+### Fit kNN model on Rockets 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Rockets 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+rockets1995 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(rockets1995)[4] <- 'Hierid'
+
+rockets1995
+```
+
+```{r}
+####### 1996 Champions: Chicago Bulls ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/CHI/1996.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Bulls 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Bulls 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+bulls1996 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(bulls1996)[4] <- 'Hierid'
+
+bulls1996
+```
+
+```{r}
+####### 1997 Champions: Chicago Bulls ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/CHI/1997.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+
+### Fit kNN model on Bulls 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Bulls 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+bulls1997 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(bulls1997)[4] <- 'Hierid'
+
+bulls1997
+```
+
+```{r}
+####### 1998 Champions: Chicago Bulls ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/CHI/1998.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Bulls 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Bulls 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+bulls1998 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(bulls1998)[4] <- 'Hierid'
+
+bulls1998
+```
+
+```{r}
+####### 1999 Champions: San Antonio Spurs ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/SAS/1999.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Spurs 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Spurs 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+spurs1999 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(spurs1999)[4] <- 'Hierid'
+
+spurs1999
+```
+
+```{r}
+
+```
+
+
+```{r}
+####### 2000 Champions: Los Angeles Lakers ###########
+
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/LAL/2000.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+
+#library(rvest)
+#url = "https://www.basketball-reference.com/teams/LAL/2000.html"
+#download.file(url, destfile = "scrapedpage.html", quiet=TRUE)
+#content <- read_html("scrapedpage.html")
+
+
+dat <- as.data.frame(dat %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Lakers 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+lakers2000 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(lakers2000)[4] <- 'Hierid'
+
+lakers2000
+```
+
+```{r}
+####### 2001 Champions: Los Angeles Lakers ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/LAL/2001.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+
+### Fit kNN model on Lakers 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+lakers2001 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(lakers2001)[4] <- 'Hierid'
+
+lakers2001
+```
+
+```{r}
+####### 2002 Champions: Los Angeles Lakers ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/LAL/2002.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Lakers 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+lakers2002 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(lakers2002)[4] <- 'Hierid'
+
+lakers2002
+```
+
+```{r}
+####### 2003 Champions: San Antonio Spurs ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/SAS/2003.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Spurs 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Spurs 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+spurs2003 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(spurs2003)[4] <- 'Hierid'
+
+spurs2003
+```
+
+```{r}
+####### 2004 Champions: Detroit Pistons ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/DET/2004.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Pistons 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Pistons 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+pistons2004 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(pistons2004)[4] <- 'Hierid'
+
+pistons2004
+```
+
+```{r}
+####### 2005 Champions: San Antonio Spurs ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/SAS/2005.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Spurs 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Spurs 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+spurs2005 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(spurs2005)[4] <- 'Hierid'
+
+spurs2005
+```
+
+```{r}
+####### 2006 Champions: Miami Heat ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/MIA/2006.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Heat 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Heat 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+heat2006 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(heat2006)[4] <- 'Hierid'
+
+heat2006
+```
+
+```{r}
+####### 2007 Champions: San Antonio Spurs ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/SAS/2007.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Spurs 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Spurs 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+spurs2007 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(spurs2007)[4] <- 'Hierid'
+
+spurs2007
+```
+
+```{r}
+####### 2008 Champions: Boston Celtics ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/BOS/2008.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Celtics 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Celtics 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+celtics2008 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(celtics2008)[4] <- 'Hierid'
+
+celtics2008
+```
+
+```{r}
+####### 2009 Champions: Los Angeles Lakers ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/LAL/2009.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+dat4$`3P%`[is.na(dat4$`3P%`)]<-0 
+
+### Fit kNN model on Lakers 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+lakers2009 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(lakers2009)[4] <- 'Hierid'
+
+lakers2009
+```
+
+```{r}
+####### 2010 Champions: Los Angeles Lakers ###########
+newlink <- xml2::read_html("https://www.basketball-reference.com/teams/LAL/2010.html")
+dat <- as.data.frame(newlink %>%html_nodes("table")%>%.[[2]] %>%html_table())
+dat2 <- subset(dat,dat$G > 0.7 * max(dat$G))
+dat3 <- dat2[-c(1,3:8,10,11,13,14,17,18)]
+colnames(dat3)[1] <- "Player"
+colnames(dat3)[15] <- "PTS"
+
+dat3
+```
+
+```{r}
+dat4 <- dat3[-1]
+
+### Fit kNN model on Lakers 
+levels_a <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.mc$`scaled:center`, scale = training.scaled.attr.mc$`scaled:scale`)
+  c <- knn(train = training.scaled.mc, test = b,
+           cl = training.data.mc[,15], k = max.kmc)
+  test <- levels(c)
+  levels_a[i] <- test
+}
+
+data <- cbind(dat3[1], t(as.data.frame(levels_a)))
+colnames(data)[2] <- 'MCid'
+data
+```
+
+```{r}
+### Fit kNN model on Lakers 
+levels_b <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.km$`scaled:center`, scale = training.scaled.attr.km$`scaled:scale`)
+  c <- knn(train = training.scaled.km, test = b,
+           cl = training.data.km[,15], k = max.kkm)
+  test <- levels(c)
+  levels_b[i] <- test
+}
+
+data2 <- cbind(data, t(as.data.frame(levels_b)))
+colnames(data2)[3] <- 'KMid'
+
+### Fit Hierarchical model 
+levels_c <- list()
+for (i in c(1:nrow(dat3))){
+  a <- dat4[i,]
+  b <- scale(a, center = training.scaled.attr.h$`scaled:center`, scale = training.scaled.attr.h$`scaled:scale`)
+  c <- knn(train = training.scaled.h, test = b,
+           cl = training.data.h[,15], k = max.h)
+  test <- levels(c)
+  levels_c[i] <- test
+}
+
+lakers2010 <- cbind(data2, t(as.data.frame(levels_c)))
+colnames(lakers2010)[4] <- 'Hierid'
+
+lakers2010
+```
+
+```{r}
+########### Row binds Champions in two types, past 5 years and 10 years ###############
+nbatoday <- nba.clust[,c(1,16,17,18)]
+
+champs80s <- rbind(lakers1980,celtics1981,lakers1982,s76ers1983,celtics1984,lakers1985,celtics1986,celtics1987,lakers1988,pistons1989)
+champs90s <- rbind(pistons1990,bulls1991,bulls1992,bulls1993,rockets1994,rockets1995,bulls1996,bulls1997,bulls1998,spurs1999)
+champs00s <- rbind(lakers2000,lakers2001,lakers2002,spurs2003,pistons2004,spurs2005,heat2006,spurs2007,celtics2008,lakers2009)
+champs10s <- rbind(lakers2010,mavericks2011,heat2012,heat2013,spurs2014,warriors2015,cavaliers2016,warriors2017,warriors2018,raptors2019)
+
+e1980s <- rbind(lakers1980,celtics1981,lakers1982,s76ers1983,celtics1984)
+l1980s <- rbind(lakers1985,celtics1986,celtics1987,lakers1988,pistons1989)
+e1990s <- rbind(pistons1990,bulls1991,bulls1992,bulls1993,rockets1994)
+l1990s <- rbind(rockets1995,bulls1996,bulls1997,bulls1998,spurs1999)
+e2000s <- rbind(lakers2000,lakers2001,lakers2002,spurs2003,pistons2004)
+l2000s <- rbind(spurs2005,heat2006,spurs2007,celtics2008,lakers2009)
+e2010s <- rbind(lakers2010,mavericks2011,heat2012,heat2013,spurs2014)
+l2010s <- rbind(warriors2015,cavaliers2016,warriors2017,warriors2018,raptors2019)
+
+library(tidyr)
+library(ggplot2)
+
+dat.g <- gather(champs80s, type, cluster,-Player)
+
+clust80s <- ggplot(dat.g[-1], aes(type,fill=cluster)) +
+  geom_bar(position = "dodge") +
+  ggtitle("1980's Championship Teams \nCluster Distributions") +
+  xlab(NULL) +
+  ylab(NULL)
+
+dat.g <- gather(champs90s, type, cluster,-Player)
+
+clust90s <- ggplot(dat.g[-1], aes(type,fill=cluster)) +
+  geom_bar(position = "dodge") +
+  ggtitle("1990's Championship Teams \nCluster Distributions") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+dat.g <- gather(champs00s, type, cluster,-Player)
+
+clust00s <- ggplot(dat.g[-1], aes(type,fill=cluster)) +
+  geom_bar(position = "dodge") +
+  ggtitle("2000's Championship Teams \nCluster Distributions") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+dat.g <- gather(champs10s, type, cluster,-Player)
+
+clust10s <- ggplot(dat.g[-1], aes(type,fill=cluster)) +
+  geom_bar(position = "dodge") +
+  ggtitle("2010's Championship Teams \nCluster Distributions") +
+  theme(legend.position="none") +
+  xlab(NULL) +
+  ylab(NULL)
+
+dat.g <- gather(nbatoday, type, cluster,-Player)
+
+today <- ggplot(dat.g[-1], aes(type,fill=cluster)) +
+  geom_bar(position = "dodge") +
+  ggtitle("NBA Today Cluster Distributions")
+
+clust80s
+```
+
+```{r}
+clust90s
+```
+
+```{r}
+clust00s
+```
+
+```{r}
+clust10s
+```
+
+```{r}
+today
+```
+
+```{r}
+library(gridExtra)
+library(cowplot)
+
+clust80s
+```
+
+```{r}
+plot_grid(clust90s, clust00s, clust10s, align = "h", ncol = 3, rel_widths = c(3/10,3/10,4/10))
+```
