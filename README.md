@@ -14,19 +14,29 @@ The resulting 3 player clusters are characterized as:
 Visualizations and statistical comparisons are used to profile each cluster. The analysis shows traditional position labels like "point guard" no longer adequately describe a player's role and style. The clusters provide an improved categorization of playing style in the modern NBA.
 
 ##  Code
-The R code to perform the clustering analysis and generate visualizations is in nba_clustering.R. It does the following:
+The R code to perform the clustering analysis and generate visualizations is in Olusegun NBA Positions.html. It does the following:
 
 -- Loads and prepares the dataset
-Removes unnecessary columns
-Imputes missing 3-point percentage values
-Resolves dual position labels using KNN
-Clusters two datasets using K-means, hierarchical, and model-based algorithms
-Determines optimal number of clusters
-Compares cluster distributions across methods
-Visualizes clusters through pairs plots, bar charts, etc.
-Profiles and names the clusters based on their statistics
-Analyzes Team USA and NBA championship teams
-Results
+
+-- Removes unnecessary columns
+
+-- Imputes missing 3-point percentage values
+
+-- Resolves dual position labels using KNN
+
+-- Clusters two datasets using K-means, hierarchical, and model-based algorithms
+
+-- Determines optimal number of clusters
+
+-- Compares cluster distributions across methods
+
+-- Visualizes clusters through pairs plots, bar charts, etc.
+
+-- Profiles and names the clusters based on their statistics
+
+-- Analyzes Team USA and NBA championship teams
+
+-- Results
 
 ## Key results and findings:
 
@@ -40,7 +50,10 @@ The analysis provides an improved, data-driven way to group NBA players based on
 ## Next Steps
 Potential extensions or future work:
 
-Add more seasons of data for a timeseries analysis
-Incorporate additional advanced metrics like PER, Win Shares, etc.
-Look at team-level composition and performance for different mixes of clusters
-Build interactive visualizations and a player recommendation tool
+-- Add more seasons of data for a timeseries analysis
+
+-- Incorporate additional advanced metrics like PER, Win Shares, etc.
+
+-- Look at team-level composition and performance for different mixes of clusters
+
+-- Build interactive visualizations and a player recommendation tool
